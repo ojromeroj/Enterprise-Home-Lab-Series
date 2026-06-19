@@ -1,0 +1,88 @@
+🎯 Objective
+To prepare for high-level Identity and Access Management (IAM) operations, I scaled my directory infrastructure into a multi-site architecture and designed a continuous monitoring pipeline. This project simulates an enterprise environment by executing a custom PowerShell infrastructure monitoring script on a virtualized Windows Server 2022 Domain Controller, bridging the telemetry gaps across hypervisor boundaries, and streaming active structural health metrics directly into a centralized Splunk Enterprise SIEM instance.
+
+System Architecture Requirements:
+Provisions a clean, hardened Windows Server 2022 Instance.
+
+deploys Active Directory Domain Services (AD DS) structures programmatically and via Server Manager.
+
+Overcomes hypervisor-to-host storage transport blocks by manually enforcing virtual interface drivers.
+
+Programmatically audits domain controller roles, directory health profiles, and infrastructure statuses.
+
+Builds a continuous network file share pipeline to safely bridge host and guest boundaries.
+
+Automates data ingestion patterns within Splunk to transform raw string outputs into indexed, searchable fields.
+
+🛠️ Step-by-Step Engineering Journey
+Phase 1: Overcoming OS Provisioning Obstacles
+I initiated the lifecycle deployment by spinning up a new virtualized instance inside Oracle VirtualBox.
+
+The Roadblock: During the initial setup phase, the installer crashed with an abrupt error stating: Windows cannot find the Microsoft Software License Terms.
+
+The Root Cause: This error occurs when VirtualBox's "Unattended Installation" feature mounts a faulty, blank temporary floppy/CD image component to hold automated setup scripts, conflicting with the core Windows Server ISO storage bus controller.
+
+The Fix: I closed the VM, entered the VM's hardware Storage parameters, and completely deleted the automated unattended image attachment (Unattended-...-a461...) from the SATA Controller. I re-attached the official Windows Server 2022 ISO directly to the virtual optical drive bay, configured a manual interactive boot sequence, and successfully pushed the operating system through the regular evaluation setup pipeline.
+
+Phase 2: Active Directory Role Promotion & Identity Foundations
+Once the base OS layer stabilized, I initiated the enterprise service bindings:
+
+I opened Server Manager, launched the Add Roles and Features Wizard, and targeted my local instance node.
+
+I selected and forced the deployment of Active Directory Domain Services (AD DS) along with integrated DNS Server extensions.
+
+Following binary installation, I promoted the machine to a root Domain Controller, initializing the active tracking tree container lab.local.
+
+Using administrative management utilities, I verified the presence of the identity structure containers and confirmed the functional deployment of test objects (John Doe, Target User) within the TestUsers Organizational Unit.
+
+Phase 3: The Infrastructure Health Automation Code
+To extract real-time system data from the directory database, I wrote and executed Get-ADInfrastructureHealth.ps1. The script captures critical infrastructure parameters and wraps them inside an optimized object matrix designed for rapid ingestion:
+
+PowerShell
+Import-Module ActiveDirectory
+
+$Report = @()
+# Targeting the VirtualBox Host Shared File Highway directly
+$CSVPath = "\\VBOXSRV\SplunkLogDrop\AD_Infrastructure_Health_Report.csv"
+
+try {
+    $Domain = Get-ADDomain "lab.local"
+    $Forest = Get-ADForest "lab.local"
+    $AllSites = (Get-ADReplicationSite -Filter *).Name
+    
+    # Constructing a structured log footprint optimized for Splunk parsing
+    $HealthObject = [PSCustomObject]@{
+        Timestamp        = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+        DomainName       = "lab.local"
+        PDCEmulator      = $Domain.PDCEmulator
+        SchemaMaster     = $Forest.SchemaMaster
+        TotalConfigSites = ($AllSites).Count
+        Status           = "OPERATIONAL"
+    }
+    
+    $Report += $HealthObject
+    $Report | Export-Csv -Path $CSVPath -NoTypeInformation
+    Write-Host "[SUCCESS] Telemetry accurately exported to SIEM shared path." -ForegroundColor Green
+} catch {
+    Write-Host "[ERROR] Monitoring pipeline failure: $_" -ForegroundColor Red
+}
+🔍 Detailed Troubleshooting Log
+Bug: Missing Guest Integration Modules
+The Symptom: Changing the script output path directly to a network share path or virtual path threw hard permission errors, meaning the server couldn't identify the host machine file directories.
+
+The Root Cause: Because Windows Server disables interactive background setups by default, the host-to-guest hardware drivers were missing, preventing the network redirection engine from authenticating with external storage pools.
+
+The Solution: I mounted the VirtualBox Guest Additions ISO image directly into the server's virtual optical bay, navigated past the security restrictions to execute VBoxWindowsAdditions-amd64.exe manually as an Administrator, allowed the driver bindings to register at the kernel layer, and rebooted.
+
+🎉 Verification & Splunk SIEM Ingestion Success
+To confirm the operation was fully successful, I configured Splunk Enterprise on my workstation to continuously monitor the synchronized directory C:\SplunkLogDrop\AD_Infrastructure_Health_Report.csv.
+
+By launching a targeted search query (source="C:\\SplunkLogDrop\\AD_Infrastructure_Health_Report.csv" host="OnixPC" sourcetype="csv"), I verified that the pipeline was completely solid:
+
+Data Integrity: Splunk cleanly accepted consecutive automated write runs with accurate tracking timestamps (11:32:07 AM and 11:42:24 AM).
+
+Automatic Field Extraction: Splunk’s indexing engine successfully extracted the script's custom attributes as independent, interactive fields. On the left-hand field panel, metrics such as DomainName, PDCEmulator, SchemaMaster, and Status are categorized as active variables.
+
+Operational Telemetry: Raw events translate exactly to "lab.local","WIN-C4NR6CTM6NI.lab.local","WIN-C4NR6CTM6NI.lab.local","3","OPERATIONAL", proving that all domain roles are functioning correctly.
+
+This configuration gives me an amazing, production-level portfolio piece that perfectly demonstrates my proficiency across Active Directory Core Infrastructure, PowerShell Engineering, and SIEM (Splunk) Log Analysis.

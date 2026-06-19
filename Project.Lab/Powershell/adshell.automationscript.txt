@@ -1,0 +1,158 @@
+Here is the fully comprehensive, first-person `README.md` for **Sub-Repository 3: Active Directory PowerShell Scripting**.
+
+This version contains an expanded, highly detailed **Troubleshooting Log** section that documents every environment quirk, module path failure, and console parsing error we encountered, along with the precise technical solutions used to overcome them.
+
+---
+
+# Active Directory User Lifecycle Automation with PowerShell
+
+## 🎯 Objective
+
+The goal of this engineering module was to phase out manual, error-prone user provisioning by creating a robust, enterprise-grade Identity and Access Management (IAM) lifecycle automation script. I designed and deployed a PowerShell script to handle multiple administrative tasks in a single, unified execution block while maintaining data integrity across directory objects.
+
+### Operational Requirements:
+
+1. Provision a distinct, isolated Organizational Unit (OU) named `TestUsers`.
+2. Securely create and configure a new employee account (`John Doe`).
+3. Handle dynamic group membership assignments securely.
+4. Programmatically deprovision high-risk or stagnant test accounts.
+5. Generate an administrative desktop compliance audit report in a clean CSV format.
+6. Trigger a mandatory, secure password reset cycle on newly onboarded accounts.
+
+---
+
+## 🛠️ Step-by-Step Engineering Journey
+
+### Phase 1: Directory Setup
+
+I began by launching an elevated administrative PowerShell console on my Windows Server 2022 Instance and attempted to directly provision the target directory structure using core system cmdlets:
+
+```powershell
+New-ADOrganizationalUnit -Name "TestUsers" -Path "DC=lab,DC=local"
+
+```
+
+Once dependencies were resolved (see Troubleshooting Log below), this command executed successfully, creating a clean foundation for user management. I verified the active structure with `Get-ADOrganizationalUnit`.
+
+---
+
+### Phase 2: Script Compilation & Idempotency
+
+To prevent terminal clutter and multi-line parsing failures from direct terminal pasting, I launched Notepad from the shell to compile my code into a standalone, production-ready script file named `ad_automation.ps1`.
+
+Furthermore, I modified the automation logic to be entirely **idempotent**. I wrapped the provisioning components inside conditional `if (-not (Get-ADUser ...))` audit statements. The script now queries Active Directory to check the current state of objects *before* changing anything—preventing red console errors if run multiple times.
+
+Here is the exact code block compiled within `ad_automation.ps1`:
+
+```powershell
+Import-Module ActiveDirectory
+Write-Host "`n--- Starting AD User Lifecycle Automation ---" -ForegroundColor Cyan
+
+# 1. Setup: Create 'target_user' only if they do not exist
+if (-not (Get-ADUser -Filter "SamAccountName -eq 'target_user'")) {
+    $TempUserParams = @{
+        Name              = "Target User"
+        GivenName         = "Target"
+        Surname           = "User"
+        SamAccountName    = "target_user"
+        UserPrincipalName = "target_user@lab.local"
+        Path              = "OU=TestUsers,DC=lab,DC=local"
+        AccountPassword   = (ConvertTo-SecureString "P@ssword123!" -AsPlainText -Force)
+        Enabled           = $true
+    }
+    New-ADUser @TempUserParams
+    Write-Host "[SUCCESS] Pre-created 'target_user'." -ForegroundColor Gray
+} else {
+    Write-Host "[INFO] 'target_user' already exists. Skipping creation." -ForegroundColor Gray
+}
+
+# 2. Create 'jdoe' only if they do not exist
+if (-not (Get-ADUser -Filter "SamAccountName -eq 'jdoe'")) {
+    $UserParams = @{
+        Name              = "John Doe"
+        GivenName         = "John"
+        Surname           = "Doe"
+        SamAccountName    = "jdoe"
+        UserPrincipalName = "jdoe@lab.local"
+        Path              = "OU=TestUsers,DC=lab,DC=local"
+        AccountPassword   = (ConvertTo-SecureString "P@ssword123!" -AsPlainText -Force)
+        Enabled           = $true
+    }
+    New-ADUser @UserParams
+    Write-Host "[SUCCESS] Created new user: John Doe (jdoe)" -ForegroundColor Green
+} else {
+    Write-Host "[INFO] User 'jdoe' already exists. Skipping creation." -ForegroundColor Gray
+}
+
+# 3. Add to group safely (Checks if already a member)
+$GroupMembers = Get-ADGroupMember -Identity "Domain Users" | Select-Object -ExpandProperty SamAccountName
+if ("jdoe" -notin $GroupMembers) {
+    Add-ADGroupMember -Identity "Domain Users" -Members "jdoe"
+    Write-Host "[SUCCESS] Added jdoe to 'Domain Users' group." -ForegroundColor Green
+} else {
+    Write-Host "[INFO] jdoe is already a member of Domain Users. Skipping group add." -ForegroundColor Gray
+}
+
+# 4. Disable target_user
+Set-ADUser -Identity "target_user" -Enabled $false
+Write-Host "[SUCCESS] Disabled test user: target_user" -ForegroundColor Yellow
+
+# 5. Export to CSV Compliance Report
+$CSVPath = "$HOME\Desktop\DisabledUsersReport.csv"
+Get-ADUser -Filter "Enabled -eq 'False'" | Select-Object Name, SamAccountName, UserPrincipalName | Export-Csv -Path $CSVPath -NoTypeInformation
+Write-Host "[SUCCESS] Exported all disabled users to: $CSVPath" -ForegroundColor Cyan
+
+# 6. Reset password
+Set-ADAccountPassword -Identity "jdoe" -NewPassword (ConvertTo-SecureString "NewSecureP@ss123!" -AsPlainText -Force) -Reset
+Write-Host "[SUCCESS] Reset password for jdoe." -ForegroundColor Green
+
+Write-Host "--- Automation Cycle Complete! ---`n" -ForegroundColor Cyan
+
+```
+
+---
+
+## 🔍 Detailed Troubleshooting Log
+
+During development, I hit several key environment and script hurdles. Documenting how I broke down and resolved these issues was critical to finalizing the pipeline:
+
+### Bug 1: Active Directory Module Broken Paths (`CommandNotFoundException`)
+
+* **The Symptom:** The terminal immediately failed when calling AD cmdlets, throwing a glaring red `CommandNotFoundException`.
+* **The Root Cause:** Running `Add-WindowsFeature RSAT-AD-PowerShell` returned an exit code stating `NoChangeNeeded`. This meant the binaries were physically installed on the OS disk, but Windows PowerShell was failing to map and auto-import them natively into the active runtime environment session.
+* **The Solution:** I ran `Get-Module -ListAvailable -Name ActiveDirectory` to locate the absolute file system manifest mapping (`C:\Windows\system32\WindowsPowerShell\v1.0\Modules`). I then bypassed the broken environment variables by forcing a manual, verbose path import:
+```powershell
+Import-Module "C:\Windows\System32\WindowsPowerShell\v1.0\Modules\ActiveDirectory\ActiveDirectory.psd1" -Verbose
+
+```
+
+
+This successfully registered the assembly references within the shell session.
+
+### Bug 2: CLI Multi-Line Copy-Paste Clutter
+
+* **The Symptom:** Mass-pasting sequential lines of code directly into the standard terminal host broke the execution logic, creating separate prompt entries and causing syntax errors.
+* **The Root Cause:** The default PowerShell console host can become overwhelmed by rapid-fire inputs, parsing distinct blocks or hashes mid-paste as independent commands before the entire script block is fully read.
+* **The Solution:** I abstracted the commands entirely out of the raw prompt input by saving them directly into a script file (`.ps1`) via Notepad. Calling the script using standard dot-sourcing (`.\ad_automation.ps1`) forced the engine to compile and parse the script as a single, unified execution unit.
+
+### Bug 3: Script Breakage via Pre-Existing Active Directory Objects
+
+* **The Symptom:** Re-running the script threw breaking red errors from the Active Directory engine, stating `The specified account already exists`.
+* **The Root Cause:** The initial script was linear and non-conditional. Active Directory natively protects directory schemas by blocking duplicate write commands for existing unique identities (`SamAccountName` or `UserPrincipalName`).
+* **The Solution:** I implemented idempotency logic by introducing `if (-not (Get-ADUser ...))` and array scanning conditions. The script now queries the directory first, handles collisions cleanly, skips duplication lines with custom logging warnings, and carries out subsequent steps (like deprovisioning and exporting) without interrupting the pipeline stream.
+
+---
+
+## 🎉 Verification & Success Criteria
+
+Executing the finalized script file (`.\ad_automation.ps1`) generated a flawless, clean console output with clear visual telemetry alerts. The auditing logic safely verified existing items, skipped duplicate creations, checked security group parameters, re-ran the account disabling mechanism, and successfully dropped an updated `DisabledUsersReport.csv` right onto the desktop.
+
+To visually audit the modifications outside the CLI, I launched the **Active Directory Users and Computers (ADUC)** management console (`dsa.msc`). As verified in the production directory:
+
+* The custom **`TestUsers`** Organizational Unit structure is actively mapped.
+* **John Doe** (`jdoe`) is active and provisioned cleanly inside the container schema.
+* **Target User** (`target_user`) natively exhibits the downward-pointing account disable arrow overlay on its object portrait, confirming that the script accurately executed the security deprovisioning workflows.
+
+```
+
+```

@@ -1,0 +1,60 @@
+# Building the Infrastructure: VirtualBox & Windows Server 2022 Deployment
+
+## 🎯 Objective
+Before I could build automation scripts or analyze security logs, I needed to construct the foundation of my environment. The goal of this module was to provision an isolated virtualized system, deploy an enterprise server operating system from scratch, and configure it as a fully operational Root Domain Controller managing an independent Active Directory forest (`lab.local`).
+
+### Architecture Components:
+* **Hypervisor:** Oracle VM VirtualBox (v7.x)
+* **Operating System:** Windows Server 2022 Standard Evaluation (Desktop Experience)
+* **Domain Role:** Active Directory Domain Services (AD DS) Domain Controller
+* **Target Domain:** `lab.local`
+
+---
+
+## 🛠️ Step-by-Step Implementation & Engineering Journey
+
+### Phase 1: Resource Provisioning & Hypervisor Setup
+1. I downloaded the official **Oracle VM VirtualBox** installer and established the host hypervisor environment.
+2. I fetched the **Windows Server 2022 Evaluation ISO** directly from the Microsoft Evaluation Center to ensure a clean, untampered base image.
+3. I provisioned a new virtual machine inside VirtualBox, ensuring the baseline hardware resource requirements matched standard lab guidelines to prevent throttling:
+   * **RAM:** 4GB minimum
+   * **Storage:** 50GB dynamically allocated virtual disk
+
+---
+
+### Phase 2: Overcoming the "License Terms" Installation Bug
+**The Roadblock:**
+Upon booting the virtual machine, the Windows installer initialized but abruptly halted with a critical error blocker: 
+> *"Windows cannot find the Microsoft Software License Terms. Make sure the installation sources are valid and restart the installation."*
+
+**The Investigation:**
+I paused the VM and dove into the virtual storage hardware settings to inspect how the installer image was mounted. I discovered that VirtualBox’s "Unattended Installation" wizard had auto-generated an empty placeholder file named `Unattended-43f83ff7-...` and mounted it under the storage controllers with a physical size of **0 Bytes**. The system was failing because it was trying to read setup files from an empty virtual disk.
+
+**The Solution:**
+1. I manually detached the corrupted `0 B` unattended disk attachment from the virtual optical drive.
+2. I selected the native storage controller option, mapped the explicit directory path to my real, downloaded Windows Server 2022 ISO file, and verified it registered its full native size (~5GB).
+3. I saved the settings and rebooted the machine, completely bypassing the error.
+
+---
+
+### Phase 3: Operating System Deployment
+1. With the storage path fixed, the installer successfully initialized. I carefully selected **Windows Server 2022 Standard Evaluation (Desktop Experience)** from the deployment options to ensure I had the full graphical interface for infrastructure management.
+2. I chose the **Custom: Install Microsoft Server Operating System only (advanced)** installation type to wipe the virtual drive clean and build a fresh system root.
+3. The setup pipeline completed all deployment phases (copying files, feature configurations, and updates) completely error-free.
+
+---
+
+### Phase 4: Promoting the Server to a Domain Controller
+1. Once the desktop loaded, I opened **Server Manager** and initialized the **Add Roles and Features Wizard**.
+2. I navigated to the Server Roles selection pane and checked **Active Directory Domain Services (AD DS)**. I accepted the prompts to include required management tools and completed the feature installation pipeline.
+3. Instead of closing out the panel, I clicked the notification flag at the top of Server Manager to trigger the **Active Directory Domain Services Configuration Wizard**.
+4. I configured the server deployment settings as follows:
+   * **Deployment Operation:** Add a new forest *(establishing a brand-new corporate tree root)*.
+   * **Root Domain Name:** `lab.local`
+   * **Security Passwords:** Configured a secure Directory Services Restore Mode (DSRM) password.
+5. I accepted the automated default paths for the active directory databases and triggered the install. The system completed its final prerequisite audit and automatically restarted to compile the new domain structure.
+
+---
+
+## 🎉 Verification & Success Criteria
+Upon reboot, the server successfully initialized with domain administrative controls. I logged in using the new domain profile (`LAB\Administrator`), confirming that the system was natively servicing directory components for `lab.local`. The VM installation phase was officially closed out as complete and ready for security integration.

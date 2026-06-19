@@ -1,0 +1,62 @@
+Import-Module ActiveDirectory
+Write-Host "`n--- Starting AD User Lifecycle Automation ---" -ForegroundColor Cyan
+
+# 1. Setup: Create 'target_user' only if they do not exist
+if (-not (Get-ADUser -Filter "SamAccountName -eq 'target_user'")) {
+    $TempUserParams = @{
+        Name              = "Target User"
+        GivenName         = "Target"
+        Surname           = "User"
+        SamAccountName    = "target_user"
+        UserPrincipalName = "target_user@lab.local"
+        Path              = "OU=TestUsers,DC=lab,DC=local"
+        AccountPassword   = (ConvertTo-SecureString "P@ssword123!" -AsPlainText -Force)
+        Enabled           = $true
+    }
+    New-ADUser @TempUserParams
+    Write-Host "[SUCCESS] Pre-created 'target_user'." -ForegroundColor Gray
+} else {
+    Write-Host "[INFO] 'target_user' already exists. Skipping creation." -ForegroundColor Gray
+}
+
+# 2. Create 'jdoe' only if they do not exist
+if (-not (Get-ADUser -Filter "SamAccountName -eq 'jdoe'")) {
+    $UserParams = @{
+        Name              = "John Doe"
+        GivenName         = "John"
+        Surname           = "Doe"
+        SamAccountName    = "jdoe"
+        UserPrincipalName = "jdoe@lab.local"
+        Path              = "OU=TestUsers,DC=lab,DC=local"
+        AccountPassword   = (ConvertTo-SecureString "P@ssword123!" -AsPlainText -Force)
+        Enabled           = $true
+    }
+    New-ADUser @UserParams
+    Write-Host "[SUCCESS] Created new user: John Doe (jdoe)" -ForegroundColor Green
+} else {
+    Write-Host "[INFO] User 'jdoe' already exists. Skipping creation." -ForegroundColor Gray
+}
+
+# 3. Add to group safely (Checks if already a member)
+$GroupMembers = Get-ADGroupMember -Identity "Domain Users" | Select-Object -ExpandProperty SamAccountName
+if ("jdoe" -notin $GroupMembers) {
+    Add-ADGroupMember -Identity "Domain Users" -Members "jdoe"
+    Write-Host "[SUCCESS] Added jdoe to 'Domain Users' group." -ForegroundColor Green
+} else {
+    Write-Host "[INFO] jdoe is already a member of Domain Users. Skipping group add." -ForegroundColor Gray
+}
+
+# 4. Disable target_user
+Set-ADUser -Identity "target_user" -Enabled $false
+Write-Host "[SUCCESS] Disabled test user: target_user" -ForegroundColor Yellow
+
+# 5. Export to CSV Compliance Report
+$CSVPath = "$HOME\Desktop\DisabledUsersReport.csv"
+Get-ADUser -Filter "Enabled -eq 'False'" | Select-Object Name, SamAccountName, UserPrincipalName | Export-Csv -Path $CSVPath -NoTypeInformation
+Write-Host "[SUCCESS] Exported all disabled users to: $CSVPath" -ForegroundColor Cyan
+
+# 6. Reset password
+Set-ADAccountPassword -Identity "jdoe" -NewPassword (ConvertTo-SecureString "NewSecureP@ss123!" -AsPlainText -Force) -Reset
+Write-Host "[SUCCESS] Reset password for jdoe." -ForegroundColor Green
+
+Write-Host "--- Automation Cycle Complete! ---`n" -ForegroundColor Cyan
